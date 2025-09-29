@@ -1,0 +1,77 @@
+name: CI / CD - JOP
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for multi-arch, optional)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: ghcr.io/hythmmran47-star/jop:${{ github.sha }}
+
+      - name: Run tests inside the built image
+        run: |
+          docker run --rm ghcr.io/hythmmran47-star/jop:${{ github.sha }} /bin/sh -c "./run_tests.sh || exit 1"
+        # ملاحظة: تأكّد أنك تملك ملف run_tests.sh في الجذر ويعطي exit non-zero عند الفشل.
+
+  push-image:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        # بديل: لو تريد Docker Hub استخدم DOCKERHUB_USERNAME و DOCKERHUB_TOKEN secrets مع registry: docker.io
+
+      - name: Build and push image to GHCR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/hythmmran47-star/jop:latest
+            ghcr.io/hythmmran47-star/jop:${{ github.sha }}
+
+  deploy-via-ssh:
+    needs: push-image
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Install SSH client
+        run: sudo apt-get update && sudo apt-get install -y openssh-client
+
+      - name: Add SSH key
+        uses: webfactory/ssh-agent@v0.8.1
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Deploy to remote server (example)
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "cd /path/to/app && docker pull ghcr.io/hythmmran47-star/jop:latest && docker-compose pull && docker-compose up -d --no-build"
+        # عدّل أمر النشر أعلاه حسب سيرفرك (docker run / kubectl / rsync ...)
+
