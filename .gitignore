@@ -1,0 +1,12 @@
+# Ignore VSCode settings
+.vscode/
+
+# Ignore system files
+AppData/
+*.tmp
+*.log
+node_modules/
+
+# Ignore other unnecessary files
+*.swp
+.DS_Store
